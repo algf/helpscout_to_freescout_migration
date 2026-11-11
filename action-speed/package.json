@@ -1,0 +1,1 @@
+{"name":"freescout-action-speed","private":true,"type":"module","scripts":{"bench":"playwright test","report":"node scripts/report.mjs"},"devDependencies":{"@playwright/test":"1.63.0"}}
