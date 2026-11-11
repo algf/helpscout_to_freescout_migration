@@ -1,0 +1,17 @@
+# This public release snapshot includes only the deployed UI source and its note.
+# Private review material, runtime configuration, screenshots and backups stay local.
+*
+!*/
+!/.gitignore
+!/README.md
+!/module/HelpScoutTheme/Public/css/theme.css
+!/module/HelpScoutTheme/Public/js/theme.js
+!/aligned/Modules/CrockdHelpScoutFolders/list-tools.js
+
+# Do not traverse nested runtime repositories with their own ignore rules.
+/local-checks-*/
+/production-deploy-*/
+/evidence/
+/audit-*/
+/refinement-*/
+/node_modules/
