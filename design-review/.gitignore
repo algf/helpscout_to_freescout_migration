@@ -7,6 +7,7 @@
 !/module/HelpScoutTheme/Public/css/theme.css
 !/module/HelpScoutTheme/Public/js/theme.js
 !/aligned/Modules/CrockdHelpScoutFolders/list-tools.js
+!/aligned/Modules/ConversationTimeline/Resources/assets/timeline.js
 
 # Do not traverse nested runtime repositories with their own ignore rules.
 /local-checks-*/
