@@ -1,0 +1,42 @@
+name: Conversation viewer checks
+on:
+  pull_request:
+    paths:
+      - 'navigation-reader/**'
+      - 'design-review/**'
+      - '.github/workflows/navigation-reader.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'navigation-reader/**'
+      - 'design-review/**'
+      - '.github/workflows/navigation-reader.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Reader safety and readiness
+        run: node --test navigation-reader/tests/*.test.cjs
+      - name: Browser script syntax
+        run: |
+          node --check design-review/module/HelpScoutTheme/Public/js/theme.js
+          node --check design-review/aligned/Modules/ConversationTimeline/Resources/assets/timeline.js
+          node --check navigation-reader/modules/InboxNavigation/navigation.js
+          node --check navigation-reader/modules/InboxNavigation/read-state.js
+          node --check navigation-reader/modules/ConversationHistory/history.js
+      - name: PHP syntax and history behaviour
+        run: |
+          php -l navigation-reader/modules/ConversationHistory/start.php
+          php -l navigation-reader/modules/InboxNavigation/start.php
+          php navigation-reader/tests/history-filter.php navigation-reader/modules/ConversationHistory/start.php

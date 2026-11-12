@@ -26,19 +26,27 @@
     function watchToolbar() {
         var toolbar = document.getElementById('conv-toolbar'), layout = document.getElementById('conv-layout');
         if (!toolbar || !layout || !document.body.classList.contains('body-conv')) return;
-        var queued = false;
+        var queued = false, heading = document.getElementById('conv-subject');
         function update() {
             queued = false;
             var top = toolbar.getBoundingClientRect().top;
             var natural = layout.getBoundingClientRect().top; // the toolbar's unpinned position
             toolbar.classList.toggle('hs-stuck', top <= 0 && natural < 0);
+            var toolbarHeight = Math.ceil(toolbar.getBoundingClientRect().height) + 'px';
+            var headingHeight = Math.ceil(heading ? heading.getBoundingClientRect().height : 0) + 'px';
+            var style = document.documentElement.style;
+            if (style.getPropertyValue('--hs-conversation-toolbar-height') !== toolbarHeight) style.setProperty('--hs-conversation-toolbar-height', toolbarHeight);
+            if (style.getPropertyValue('--hs-conversation-heading-height') !== headingHeight) style.setProperty('--hs-conversation-heading-height', headingHeight);
         }
         window.addEventListener('scroll', function () {
             if (queued) return;
             queued = true;
             window.requestAnimationFrame(update);
         }, { passive: true });
+        window.addEventListener('resize', update, { passive: true });
         update();
+        // workspaceLabels moves controls and tags before this frame runs.
+        requestAnimationFrame(update);
     }
     // Workflow editor (issue #130): name each row's controls for screen readers, such as "Value for To". The
     // Workflows module swaps the visible operator and value when the type changes, so the names follow the choice.
@@ -275,11 +283,11 @@
                             tag.title = tag.textContent.trim();
                             tag.setAttribute('tabindex', '0'); tag.setAttribute('role', 'link');
                         });
-                        if (all.length > 2) {
+                        if (all.length > 1) {
                             var more = make('details', 'hs-more-tags');
-                            more.appendChild(make('summary', '', '+' + (all.length - 2)));
+                            more.appendChild(make('summary', '', '+' + (all.length - 1)));
                             var contents = make('span', 'hs-tag-popover');
-                            all.slice(2).forEach(function (tag) { contents.appendChild(tag); });
+                            all.slice(1).forEach(function (tag) { contents.appendChild(tag); });
                             more.appendChild(contents); tags.appendChild(more);
                         }
                     }
@@ -366,10 +374,37 @@
                 li.insertBefore(make('span', 'hs-field-label', item[1]), control);
                 fields.appendChild(li);
             });
-            overview.appendChild(fields); sidebar.prepend(overview);
+            overview.appendChild(fields);
+            var subjectText = document.querySelector('#conv-subject .conv-subjtext > span');
+            if (subjectText) {
+                subjectText.title = subjectText.textContent.trim();
+                var fullSubject = make('section', 'hs-overview-subject');
+                fullSubject.appendChild(make('h3', 'hs-field-label', 'Subject'));
+                fullSubject.appendChild(make('p', '', subjectText.textContent.trim()));
+                overview.appendChild(fullSubject);
+            }
+            document.querySelectorAll('.thread-person strong').forEach(function (sender) {
+                sender.title = sender.textContent.trim();
+            });
+            // Move the native tag nodes, retaining IDs and directly bound native events.
+            // The add-tag dropdown stays in the toolbar, outside the details disclosure.
+            var conversationTags = document.getElementById('conv_tags');
+            if (conversationTags) {
+                var tagSection = make('section', 'hs-overview-tags');
+                tagSection.appendChild(make('h3', 'hs-panel-title', 'Tags'));
+                tagSection.appendChild(conversationTags); overview.appendChild(tagSection);
+            }
+            sidebar.prepend(overview);
             document.body.classList.add('hs-conversation-layout');
             var customer = sidebar.querySelector('.conv-customer-block');
-            if (customer) customer.prepend(make('h2', 'hs-panel-title', 'Customer'));
+            if (customer) {
+                var customerHeading = make('div', 'hs-customer-heading');
+                customerHeading.appendChild(make('h2', 'hs-panel-title', 'Customer'));
+                // Move the native dropdown, keeping its handlers and menu intact.
+                var customerTrigger = customer.querySelector('.customer-trigger');
+                if (customerTrigger) customerHeading.appendChild(customerTrigger);
+                customer.prepend(customerHeading);
+            }
             var mobile = window.matchMedia('(width <= 1000px)');
             var context = Array.from(sidebar.children).filter(function (node) { return node !== overview && node.classList.contains('conv-sidebar-block'); });
             var reference = document.querySelector('.conv-numnav');
@@ -388,8 +423,10 @@
                 jump.addEventListener('click', function () {
                     var reply = document.querySelector('.cc-composer, .conv-reply-block');
                     if (reply) {
-                        var sticky = document.getElementById('conv-toolbar');
-                        var offset = sticky && /sticky|fixed/.test(getComputedStyle(sticky).position) ? sticky.getBoundingClientRect().height : 0;
+                        var offset = ['conv-toolbar', 'conv-subject'].reduce(function (height, id) {
+                            var sticky = document.getElementById(id);
+                            return height + (sticky && /sticky|fixed/.test(getComputedStyle(sticky).position) ? sticky.getBoundingClientRect().height : 0);
+                        }, 0);
                         // FreeScout overrides window.scrollTo with a jQuery helper.
                         document.scrollingElement.scrollTop = window.scrollY + reply.getBoundingClientRect().top - offset - 8;
                         var editor = reply.querySelector('[contenteditable="true"]'); if (editor) editor.focus({preventScroll:true});
@@ -474,6 +511,10 @@
                 var descriptions = (editor.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean);
                 if (descriptions.indexOf(id) === -1) { descriptions.push(id); attr(editor, 'aria-describedby', descriptions.join(' ')); }
             });
+            document.querySelectorAll('#conv_tags .tag-remove').forEach(function (control) {
+                var name = control.parentElement.querySelector('.tag-name');
+                attr(control, 'aria-label', 'Remove tag ' + (name ? name.textContent.trim() : ''));
+            });
             document.querySelectorAll('.conv-add-tags').forEach(function (control) { attr(control, 'aria-label', 'Add tags'); attr(control, 'tabindex', '0'); });
             document.querySelectorAll('#add-tag-wrap .input-group-btn button').forEach(function (control) { attr(control, 'aria-label', 'Apply tags'); });
             document.querySelectorAll('.btn-send-menu').forEach(function (control) { attr(control, 'aria-label', 'Send options'); });
@@ -531,11 +572,11 @@
         });
         // Native folder clicks stop bubbling. Class observation also covers outside-click dismissal.
         var content = document.querySelector('.content-2col') || document.body;
-        var relevant = '#field-to, .field-cc, .recipient-select, .conv-recipient, .select2-container, .note-editor, .note-editable, .cc-composer, .cc-mode-hint, .conv-reply-block, .conv-col-sort, .table-conversations, .sidebar-menu, .sidebar-menu-toggle, .btn-send-menu, .conv-add-tags';
+        var relevant = '#field-to, .field-cc, .recipient-select, .conv-recipient, .select2-container, .note-editor, .note-editable, .cc-composer, .cc-mode-hint, .conv-reply-block, .conv-col-sort, .table-conversations, .sidebar-menu, .sidebar-menu-toggle, .btn-send-menu, .conv-add-tags, #conv_tags, #conv_tags .tag, #conv_tags .tag-name';
         var observer = new MutationObserver(function (changes) {
             if (changes.some(function (change) {
                 if (change.type === 'attributes') return change.target.matches(relevant);
-                return Array.from(change.addedNodes).some(function (node) { return node.nodeType === 1 && (node.matches(relevant) || node.querySelector(relevant)); }) || change.target.matches('.cc-mode-hint');
+                return Array.from(change.addedNodes).some(function (node) { return node.nodeType === 1 && (node.matches(relevant) || node.querySelector(relevant)); }) || change.target.matches('.cc-mode-hint, #conv_tags, #conv_tags .tag, #conv_tags .tag-name');
             })) schedule();
         });
         observer.observe(content, {childList:true, subtree:true, attributes:true, attributeFilter:['class', 'data-cc-mode', 'data-sorting_sort_by', 'data-sorting_order']});
