@@ -1,0 +1,1 @@
+{"name":"Mail Arrival","alias":"mailarrival","description":"Opt-in incremental mailbox import and committed inbox receipts.","version":"0.1.0","active":0,"order":0,"providers":[],"aliases":{},"files":["start.php"],"requires":[]}

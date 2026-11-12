@@ -1,0 +1,12 @@
+{
+  "name": "freescout-mail-arrival-local",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:provider": "python3 -m unittest discover -s tests/integration -v",
+    "test:frontend": "playwright test --config tests/frontend/playwright.config.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0"
+  }
+}

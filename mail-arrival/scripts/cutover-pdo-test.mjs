@@ -1,0 +1,10 @@
+import {readFileSync} from 'node:fs';
+import {guard,php,root} from './local.mjs';
+import path from 'node:path';
+guard();
+const read=name=>readFileSync(path.join(root,'harness',name),'utf8').replace(/^<\?php\s*/, '');
+const core=read('cutover-seed.php');
+const store=read('cutover-pdo-store.php');
+const test=read('cutover-pdo-test.php');
+const literal=text=>`base64_decode('${Buffer.from(text).toString('base64')}')`;
+console.log(php(`eval(${literal(core)});eval(${literal(store)});${test}`));
