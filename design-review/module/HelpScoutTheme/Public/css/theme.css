@@ -2049,3 +2049,160 @@ html.inbox-reader-child #app #conv-toolbar .mailbox-one-click-close { display: n
     .hs-conversation-layout #app #conv-layout-customer .customer-contacts a { min-height: 44px; padding: 12px 0; }
     .hs-conversation-layout #app #conv-layout-customer .hs-customer-heading .customer-trigger > a { width: 44px; height: 44px; }
 }
+
+/* Andrew, 21 Nov 2026: phone and tablet rows (1000px and below) stack their actions in the 76px rail: Close on
+   top, then Assign, then Unsub on rows that offer it. The rail sits at the top of the row, so Close is always the
+   same distance from the row's top edge and a repeated tap on Close lands on the next row's Close, never on its
+   Assign or Unsub. The rail keeps its width, so subjects keep their room. Close stays the one outlined button;
+   Assign and Unsub are quiet (no outline until pressed) so the list does not read as a wall of buttons, and keep
+   44px touch targets. Desktop rows are unchanged: the bulk bar assigns there. */
+.mailbox-row-assign { display: none; }
+@media (width <= 1000px) {
+    #app .table.table-conversations tbody tr.conv-row > td.mailbox-close-column { align-self: start; top: auto; }
+    #app .hs-row-actions { flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 4px; width: 76px; }
+    #app .hs-row-actions .mailbox-one-click-close { order: 0; flex-shrink: 0; }
+    .hs-row-assign-available #app .hs-row-actions .mailbox-row-assign,
+    #app .table.table-conversations td.mailbox-close-column .hs-row-actions .mailbox-unsub-row.btn {
+        display: inline-flex; align-items: center; justify-content: center; gap: 3px;
+        box-sizing: border-box; width: 76px; min-width: 76px; height: 44px; min-height: 44px; margin: 0; padding: 0 4px;
+        font-size: 13px; font-weight: 500; line-height: 1; color: var(--hs-light);
+        background: transparent; border-color: transparent; box-shadow: none; border-radius: var(--hs-radius);
+    }
+    .hs-row-assign-available #app .hs-row-actions .mailbox-row-assign { order: 1; }
+    #app .table.table-conversations td.mailbox-close-column .hs-row-actions .mailbox-unsub-row.btn { order: 2; }
+    #app .hs-row-actions .mailbox-row-assign:hover, #app .hs-row-actions .mailbox-row-assign:active,
+    #app .hs-row-actions .mailbox-row-assign[aria-expanded="true"],
+    #app .table.table-conversations td.mailbox-close-column .hs-row-actions .mailbox-unsub-row.btn:hover,
+    #app .table.table-conversations td.mailbox-close-column .hs-row-actions .mailbox-unsub-row.btn:active {
+        background: var(--hs-action-tint); border-color: var(--hs-border); color: var(--hs-text);
+    }
+    #app .hs-row-actions .mailbox-row-assign:focus-visible,
+    #app .table.table-conversations td.mailbox-close-column .hs-row-actions .mailbox-unsub-row.btn:focus-visible { outline: none; box-shadow: var(--hs-focus); }
+    #app .hs-row-actions .mailbox-row-assign.is-busy, #app .hs-row-actions .mailbox-unsub-row.is-busy { opacity: .6; }
+    /* Narrow padding and a 13px icon leave 54px for the name: every live first name (the longest has 8 letters) fits. */
+    .hs-row-assign-available #app .hs-row-actions .mailbox-row-assign { padding: 0 2px; }
+    #app .hs-row-actions .mailbox-row-assign-icon { flex: none; width: 13px; height: 13px; color: var(--hs-faint); }
+    /* An assigned email names its owner: darker text and an action-blue icon. */
+    #app .hs-row-actions .mailbox-row-assign:not([data-user-id="-1"]) { color: var(--hs-text); }
+    #app .hs-row-actions .mailbox-row-assign:not([data-user-id="-1"]) .mailbox-row-assign-icon { color: var(--hs-action); }
+    #app .hs-row-actions .mailbox-row-assign-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #app .hs-row-actions .mailbox-unsub-row .mailbox-unsub-label { position: static; width: auto; height: auto; overflow: visible; clip: auto; }
+}
+.hs-row-assign-menu { position: fixed; z-index: 1060; display: block; max-height: calc(100svh - 16px); overflow-y: auto; margin: 0; padding: 4px 0; }
+.hs-row-assign-menu .hs-row-assign-heading { padding: 8px 16px 4px; color: var(--hs-light); font: 600 12px/16px var(--hs-font); }
+.hs-row-assign-menu .hs-row-assign-option {
+    display: flex; align-items: center; width: 100%; min-height: 44px; padding: 0 16px; border: 0;
+    background: none; color: var(--hs-text); font: 14px var(--hs-font); text-align: left;
+}
+.hs-row-assign-menu .hs-row-assign-option:hover, .hs-row-assign-menu .hs-row-assign-option:focus-visible { background: var(--hs-action-tint); outline: none; }
+.hs-row-assign-menu .hs-row-assign-option[aria-checked="true"] { font-weight: 600; color: var(--hs-headline); }
+.hs-row-assign-menu .hs-row-assign-option[aria-checked="true"]::after { content: "✓"; margin-left: auto; color: var(--hs-action); }
+
+/* Andrew, 23 Nov 2026: switching mailbox on a phone. The Folders panel opens with the mailboxes as tabs (Andrew,
+   Crockd, Fiveways, each with its Unassigned count). A tab shows that mailbox's folders in the same panel, so any
+   folder in any mailbox is three taps away. The mailbox name in the header ("Crockd ▾") opens the same panel.
+   Desktop keeps its sidebar and the Mailbox menu. */
+.hs-mailbox-switch, #app #folders > li.hs-mailbox-switch { display: none; }
+.hs-mailbox-tab { margin: 0; border: 0; border-radius: var(--hs-radius-sm); background: transparent; color: var(--hs-text); font-family: var(--hs-font); }
+@media (width <= 1000px) {
+    #app #folders > li.hs-mailbox-switch:not([hidden]) { display: block; margin: 0 0 8px; padding: 0 0 8px; border-bottom: 1px solid var(--hs-border); }
+    #app #folders[data-hs-switch="other"] > li:not(.hs-mailbox-switch) { display: none !important; }
+    #app .hs-mailbox-tabs { display: flex; gap: 4px; padding: 4px; border-radius: var(--hs-radius); background: var(--hs-sidebar); }
+    #app .hs-mailbox-tab {
+        display: flex; flex: 1 1 0; align-items: center; justify-content: center; gap: 6px; min-width: 0; min-height: 44px;
+        margin: 0; padding: 0 8px; border: 0; border-radius: var(--hs-radius-sm); background: transparent; color: var(--hs-text);
+        font: 500 14px/18px var(--hs-font); cursor: pointer;
+    }
+    #app .hs-mailbox-tab[aria-selected="true"] { background: var(--hs-surface); color: var(--hs-action); font-weight: 600; box-shadow: var(--hs-shadow-edge); }
+    #app .hs-mailbox-tab:focus-visible { outline: none; box-shadow: var(--hs-focus); }
+    #app .hs-mailbox-tab-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #app .hs-mailbox-tab-count {
+        flex: none; min-width: 20px; height: 18px; padding: 0 6px; border-radius: var(--hs-radius-pill);
+        background: var(--hs-action-tint); color: var(--hs-action); font-size: 12px; font-weight: 600; line-height: 18px; text-align: center;
+    }
+    #app .hs-switch-folders { margin: 8px 0 0; padding: 0; list-style: none; }
+    #app .hs-switch-folders > li { margin: 0; }
+    #app .hs-switch-folders > li > a {
+        position: relative; display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 12px 40px;
+        border-radius: var(--hs-radius); color: var(--hs-dark); font-size: 15px; line-height: 20px; text-decoration: none;
+    }
+    #app .hs-switch-folders > li > a.no-active { color: var(--hs-faint); }
+    #app .hs-switch-folders > li > a:hover, #app .hs-switch-folders > li > a:focus-visible { background: var(--hs-action-tint); color: var(--hs-headline); outline: none; }
+    #app .hs-switch-folders .glyphicon { position: absolute; left: 10px; top: 14px; }
+    #app .hs-switch-folders > li.hs-switch-section { margin-top: 8px; padding: 10px 8px 4px; color: var(--hs-light); font-size: 12px; font-weight: 500; line-height: 16px; }
+    #app .sidebar-2col .sidebar-title[data-hs-switch-trigger] { cursor: pointer; border-radius: var(--hs-radius); }
+    #app .sidebar-2col .sidebar-title[data-hs-switch-trigger]:focus-visible { outline: none; box-shadow: var(--hs-focus); }
+    #app .sidebar-2col .sidebar-title[data-hs-switch-trigger] .mailbox-name::after {
+        content: ""; display: inline-block; width: 6px; height: 6px; margin: 0 0 3px 7px;
+        border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg);
+    }
+}
+/* Phones (480px and below): the count sits under the name, so names are not cut off, even with four-digit counts
+   (live data, 23 Nov 2026: four-digit Unassigned counts). */
+@media (width <= 480px) {
+    #app .hs-mailbox-tab { flex-direction: column; gap: 2px; padding: 4px 4px; font-size: 13px; line-height: 16px; }
+    #app .hs-mailbox-tab-count { height: 16px; line-height: 16px; font-size: 11px; }
+}
+/* The phone menu's Mailbox list showed the current mailbox as white text on a pale tint. */
+@media (width < 768px) {
+    .navbar-default .navbar-nav .open .dropdown-menu > .active > a,
+    .navbar-default .navbar-nav .open .dropdown-menu > .active > a:hover,
+    .navbar-default .navbar-nav .open .dropdown-menu > .active > a:focus { background: rgba(255, 255, 255, .16); color: #fff; font-weight: 600; }
+}
+
+/* Andrew, 23 Nov 2026: phone menu panel. Slides in from the right, under the menu button, with every destination
+   showing. Tablets and desktop keep the native navbar. */
+.hs-menu-sheet, .hs-menu-backdrop { display: none; }
+@media (width < 768px) {
+    .hs-menu-backdrop { display: block; position: fixed; inset: 0; z-index: 1040; background: rgba(19, 27, 36, .4); opacity: 0; pointer-events: none; transition: opacity .18s ease; }
+    .hs-menu-backdrop.is-open { opacity: 1; pointer-events: auto; }
+    .hs-menu-sheet {
+        display: flex; flex-direction: column; position: fixed; top: 0; right: 0; bottom: 0; z-index: 1050;
+        width: min(340px, 88vw); background: var(--hs-surface); box-shadow: var(--hs-shadow-menu);
+        transform: translateX(100%); visibility: hidden; transition: transform .2s ease, visibility 0s linear .2s;
+        padding-bottom: env(safe-area-inset-bottom);
+    }
+    .hs-menu-sheet.is-open { transform: none; visibility: visible; transition: transform .2s ease; }
+    html.hs-menu-open, html.hs-menu-open body { overflow: hidden; }
+    .hs-menu-head {
+        display: flex; align-items: center; justify-content: space-between; flex: none; min-height: 56px;
+        padding: max(6px, env(safe-area-inset-top)) 8px 6px 20px; background: var(--hs-nav); color: #fff;
+    }
+    .hs-menu-title { font: 600 17px/24px var(--hs-font); }
+    .hs-menu-close {
+        display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; margin: 0; padding: 0;
+        border: 0; border-radius: var(--hs-radius); background: transparent; color: #fff; font: 400 28px/1 var(--hs-font); cursor: pointer;
+    }
+    .hs-menu-close:focus-visible { outline: none; box-shadow: var(--hs-focus); }
+    .hs-menu-body { flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; padding: 8px 0 16px; }
+    .hs-menu-section { padding: 8px 12px 4px; }
+    .hs-menu-section + .hs-menu-section { border-top: 1px solid var(--hs-border); margin-top: 4px; }
+    .hs-menu-heading { display: flex; align-items: baseline; gap: 8px; margin: 4px 8px 4px; color: var(--hs-light); font: 500 12px/16px var(--hs-font); }
+    .hs-menu-note { color: var(--hs-faint); font-weight: 400; }
+    .hs-menu-section ul { margin: 0; padding: 0; list-style: none; }
+    .hs-menu-item {
+        display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 12px; border-radius: var(--hs-radius);
+        color: var(--hs-dark); font: 400 16px/20px var(--hs-font); text-decoration: none;
+    }
+    .hs-menu-item:hover, .hs-menu-item:focus-visible { background: var(--hs-action-tint); color: var(--hs-headline); outline: none; text-decoration: none; }
+    .hs-menu-item.is-current { color: var(--hs-action); font-weight: 600; }
+    .hs-menu-item.is-current::after { content: "✓"; margin-left: 8px; color: var(--hs-action); }
+    .hs-menu-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .hs-menu-count:empty { display: none; }
+    .hs-menu-count {
+        flex: none; min-width: 22px; height: 20px; padding: 0 7px; border-radius: var(--hs-radius-pill);
+        background: var(--hs-action-tint); color: var(--hs-action); font-size: 12px; font-weight: 600; line-height: 20px; text-align: center;
+    }
+    .hs-menu-mailboxes .hs-menu-item { font-weight: 500; }
+    /* The top bar (Menu, Search, notifications) stays at the top while the inbox scrolls, so it is always one tap away. */
+    /* Not on a full conversation page, which pins its own toolbar. */
+    body:not(.body-conv) #app > nav.navbar { position: sticky; top: 0; z-index: 1030; }
+    /* The mailbox settings gear is in the menu now, so the phone header keeps Folders, the mailbox name and New. */
+    #app .sidebar-2col .sidebar-buttons .btn-group.dropdown:has(> .dropdown-toggle .glyphicon-cog) { display: none; }
+}
+/* A pinned bar needs a page wrapper that clips sideways overflow without becoming its own scroll area. Browsers
+   without overflow: clip keep the old wrapper, and the bar simply scrolls as before. */
+@media (width < 768px) { @supports (overflow: clip) { body:not(.body-conv) #app { overflow: visible; overflow-x: clip; } } }
+@media (width < 768px) and (prefers-reduced-motion: reduce) {
+    .hs-menu-sheet, .hs-menu-sheet.is-open, .hs-menu-backdrop { transition: none; }
+}

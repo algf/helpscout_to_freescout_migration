@@ -148,7 +148,10 @@
         if (folderToggle) {
             var menuLabel = document.querySelector('#folders') ? 'Folders' : (document.querySelector('.content-2col input[name="q"]') ? 'Filters' : 'Menu');
             folderToggle.textContent = menuLabel; folderToggle.setAttribute('aria-label', 'Show ' + menuLabel.toLowerCase());
-            folderToggle.setAttribute('title', menuLabel); folderToggle.setAttribute('data-original-title', menuLabel);
+            // Andrew, 23 Nov 2026: a tap left a "Folders" tooltip over the first folder. The button says Folders
+            // already, so it has no tooltip.
+            folderToggle.removeAttribute('title'); folderToggle.removeAttribute('data-original-title'); folderToggle.removeAttribute('data-toggle');
+            if (window.jQuery && window.jQuery.fn && window.jQuery.fn.tooltip) { try { window.jQuery(folderToggle).tooltip('destroy'); } catch (e) {} }
         }
         var sidebar = document.querySelector('.sidebar-2col');
         var compose = sidebar && sidebar.querySelector('.sidebar-buttons [aria-label="New Conversation"]');
@@ -260,9 +263,11 @@
                         var destination = compact ? panel : group;
                         // Native details has an anonymous content box in Chromium. Move the
                         // real controls out on desktop so each action participates in flex layout.
-                        [copy, group.querySelector('.mailbox-unsub-row')].forEach(function (control) {
-                            if (control && control.parentNode !== destination) destination.appendChild(control);
-                        });
+                        if (copy && copy.parentNode !== destination) destination.appendChild(copy);
+                        // Andrew, 21 Nov 2026: phones show Unsub on the row wherever the conversation page does,
+                        // so it stays with Close and Assign instead of going into the hidden More panel.
+                        var unsub = group.querySelector('.mailbox-unsub-row');
+                        if (unsub && unsub.parentNode !== group) group.insertBefore(unsub, more);
                         more.hidden = !compact;
                         if (more.dataset.compact !== String(compact)) {
                             more.open = false; more.dataset.compact = String(compact);
@@ -595,4 +600,191 @@
     }
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
     else init();
+})();
+
+// Andrew, 23 Nov 2026: the phone menu. The menu button (top right) used to push the page down and list "Mailbox" and
+// "Manage" as folded entries on the left, so every destination took another tap. On phones it now opens a panel that
+// slides in from the right with every destination showing: Mailboxes (with Unassigned counts), this mailbox's
+// settings, Manage and Account. It reuses the native links, so permissions and handlers (Log Out) are unchanged.
+// Tablets and desktop keep the native navbar.
+(function () {
+    'use strict';
+    var phone = window.matchMedia('(width < 768px)');
+    var sheet = null, backdrop = null, opener = null, counts = null, savedScroll = 0;
+    function scroller() { return document.scrollingElement || document.documentElement; }
+
+    function text(el) { return (el.textContent || '').replace(/\s+/g, ' ').trim(); }
+    // The words a native entry shows now, without parts it hides (Mute / Unmute).
+    function visibleText(a) {
+        var copy = a.cloneNode(true);
+        copy.querySelectorAll('.hidden, [hidden], [style*="display: none"], [style*="display:none"], .sr-only').forEach(function (el) { el.remove(); });
+        return text(copy);
+    }
+    function usable(a) {
+        return !!a && !a.closest('.hidden') && !a.classList.contains('hidden') && visibleText(a) !== '';
+    }
+    // [{title, note, items: [{label, href, source, current}]}] from the native menus on this page.
+    function sections() {
+        var out = [], nav = document.getElementById('app-navbar-collapse');
+        if (!nav) return out;
+        nav.querySelectorAll(':scope > .navbar-nav > li').forEach(function (li) {
+            if (li.classList.contains('web-notifications') || li.querySelector('#search-dt')) return;
+            var toggle = li.querySelector(':scope > a.dropdown-toggle');
+            var links = toggle ? li.querySelectorAll(':scope > .dropdown-menu > li > a') : li.querySelectorAll(':scope > a');
+            var items = Array.prototype.filter.call(links, usable).map(function (a) {
+                return { label: visibleText(a), href: a.getAttribute('href'), source: a, current: !!(a.parentElement && a.parentElement.classList.contains('active')) };
+            });
+            if (!items.length) return;
+            var title = toggle ? text(toggle) : 'Mailbox';
+            var note = '';
+            if (toggle && toggle.classList.contains('dropdown-toggle-account')) { note = text(toggle.querySelector('.nav-user') || toggle); title = 'Account'; }
+            else if (/^Mailbox$/i.test(title)) title = toggle ? 'Mailboxes' : 'Mailbox';
+            out.push({ title: title, note: note, items: items, key: /^Mailbox/.test(title) ? 'mailboxes' : title.toLowerCase() });
+        });
+        // On a mailbox page, its settings menu (the gear) as its own section, after Mailboxes.
+        var gear = document.querySelectorAll('.sidebar-2col .sidebar-buttons .dropdown-menu > li > a');
+        var name = document.querySelector('.sidebar-2col .sidebar-title .mailbox-name');
+        var settings = Array.prototype.filter.call(gear, usable).map(function (a) { return { label: visibleText(a), href: a.getAttribute('href'), source: a, current: false }; });
+        if (settings.length && name) {
+            var at = out.findIndex(function (s) { return s.key === 'mailboxes'; });
+            out.splice(at + 1, 0, { title: text(name) + ' settings', note: '', items: settings, key: 'mailbox-settings' });
+        }
+        // Account last.
+        out.sort(function (a, b) { return (a.title === 'Account') - (b.title === 'Account'); });
+        return out;
+    }
+    function build() {
+        var list = sections();
+        if (!list.length) return false;
+        backdrop = document.createElement('div');
+        backdrop.className = 'hs-menu-backdrop';
+        sheet = document.createElement('div');
+        sheet.className = 'hs-menu-sheet';
+        sheet.id = 'hs-menu-sheet';
+        sheet.setAttribute('role', 'dialog');
+        sheet.setAttribute('aria-modal', 'true');
+        sheet.setAttribute('aria-label', 'Menu');
+        var head = document.createElement('div');
+        head.className = 'hs-menu-head';
+        head.innerHTML = '<span class="hs-menu-title">Menu</span>';
+        var close = document.createElement('button');
+        close.type = 'button'; close.className = 'hs-menu-close'; close.setAttribute('aria-label', 'Close menu');
+        close.innerHTML = '<span aria-hidden="true">&times;</span>';
+        close.addEventListener('click', function () { hide(true); });
+        head.appendChild(close);
+        sheet.appendChild(head);
+        var body = document.createElement('nav');
+        body.className = 'hs-menu-body';
+        body.setAttribute('aria-label', 'Main menu');
+        list.forEach(function (section) {
+            var group = document.createElement('section');
+            group.className = 'hs-menu-section hs-menu-' + section.key.replace(/[^a-z0-9]+/g, '-');
+            var h = document.createElement('h2');
+            h.className = 'hs-menu-heading';
+            h.textContent = section.title;
+            if (section.note) { h.appendChild(document.createTextNode(' ')); var n = document.createElement('span'); n.className = 'hs-menu-note'; n.textContent = section.note; h.appendChild(n); }
+            group.appendChild(h);
+            var ul = document.createElement('ul');
+            section.items.forEach(function (item) {
+                var li = document.createElement('li');
+                var a = document.createElement('a');
+                a.className = 'hs-menu-item';
+                a.href = item.href && item.href !== '#' ? item.href : '#';
+                var label = document.createElement('span'); label.className = 'hs-menu-label'; label.textContent = item.label;
+                a.appendChild(label);
+                if (section.key === 'mailboxes') { var c = document.createElement('span'); c.className = 'hs-menu-count'; a.appendChild(c); a.dataset.mailboxPath = (function () { try { return new URL(a.href, location.href).pathname; } catch (e) { return ''; } })(); }
+                if (item.current) { a.setAttribute('aria-current', 'page'); a.classList.add('is-current'); }
+                if (item.source.hasAttribute('aria-pressed')) { a.setAttribute('role', 'button'); a.setAttribute('aria-pressed', item.source.getAttribute('aria-pressed')); }
+                if (item.source.getAttribute('target') === '_blank') a.target = '_blank';
+                // Every entry taps its native original, so pop-ups (Default Redirect), new tabs (Keyboard Shortcuts),
+                // toggles (Mute, Privacy mode) and Log Out behave exactly as in the native menu.
+                a.addEventListener('click', function (event) { event.preventDefault(); hide(false); item.source.click(); });
+                li.appendChild(a);
+                ul.appendChild(li);
+            });
+            group.appendChild(ul);
+            body.appendChild(group);
+        });
+        sheet.appendChild(body);
+        backdrop.addEventListener('click', function () { hide(true); });
+        document.body.appendChild(backdrop);
+        document.body.appendChild(sheet);
+        sheet.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape') { event.preventDefault(); hide(true); return; }
+            if (event.key !== 'Tab') return;
+            var items = Array.prototype.slice.call(sheet.querySelectorAll('a[href], button'));
+            var first = items[0], last = items[items.length - 1];
+            if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+            else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+        });
+        return true;
+    }
+    // Unassigned counts beside each mailbox, from the mailbox switcher's folder data when this page has it.
+    function loadCounts() {
+        if (!window.hsMailboxSwitcherUrl || !window.fetch) return;
+        if (counts && Date.now() - counts.at < 30000) { paintCounts(); return; }
+        fetch(window.hsMailboxSwitcherUrl, { credentials: 'same-origin', cache: 'no-store', headers: { 'X-Requested-With': 'XMLHttpRequest', Accept: 'application/json' } })
+            .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
+            .then(function (json) { counts = { at: Date.now(), byPath: {} }; (json.mailboxes || []).forEach(function (m) { try { counts.byPath[new URL(m.url, location.href).pathname] = Number(m.unassigned) || 0; } catch (e) {} }); paintCounts(); })
+            .catch(function () {});
+    }
+    function paintCounts() {
+        if (!sheet || !counts) return;
+        sheet.querySelectorAll('.hs-menu-mailboxes .hs-menu-item').forEach(function (a) {
+            var n = counts.byPath[a.dataset.mailboxPath], c = a.querySelector('.hs-menu-count');
+            if (!c) return;
+            c.textContent = n > 0 ? String(n) : '';
+            a.setAttribute('aria-label', a.querySelector('.hs-menu-label').textContent + (n > 0 ? ', ' + n + ' unassigned' : ''));
+        });
+    }
+    // Close whatever else is open first. The row Assign menu closes on a tap outside it; the Folders panel and
+    // Bootstrap menus (notifications, account) by their open classes. No synthetic Escape: shortcut modules listen to it.
+    function closeOthers() {
+        if (document.querySelector('.hs-row-assign-menu')) document.body.click();
+        document.querySelectorAll('.dropdown.open, .btn-group.open').forEach(function (el) {
+            el.classList.remove('open');
+            var t = el.querySelector(':scope > [data-toggle="dropdown"]'); if (t) t.setAttribute('aria-expanded', 'false');
+        });
+        document.querySelectorAll('.sidebar-menu.active, .sidebar-menu-toggle.active').forEach(function (el) { el.classList.remove('active'); });
+    }
+    function show(toggle) {
+        closeOthers();
+        // Rebuilt on every opening, so toggles (Mute, Privacy mode) show their current words.
+        if (sheet) { sheet.remove(); backdrop.remove(); sheet = backdrop = null; }
+        if (!build()) return false;
+        opener = toggle;
+        savedScroll = scroller().scrollTop; // locking page scroll can reset it; put it back on close
+        void sheet.offsetWidth; // start from the closed position so it slides in
+        sheet.classList.add('is-open'); backdrop.classList.add('is-open');
+        document.documentElement.classList.add('hs-menu-open');
+        if (toggle) toggle.setAttribute('aria-expanded', 'true');
+        loadCounts();
+        var close = sheet.querySelector('.hs-menu-close');
+        if (close) close.focus({ preventScroll: true });
+        return true;
+    }
+    function hide(returnFocus) {
+        if (!sheet || !sheet.classList.contains('is-open')) return;
+        sheet.classList.remove('is-open'); backdrop.classList.remove('is-open');
+        document.documentElement.classList.remove('hs-menu-open');
+        if (scroller().scrollTop !== savedScroll) scroller().scrollTop = savedScroll;
+        if (opener) { opener.setAttribute('aria-expanded', 'false'); if (returnFocus) opener.focus({ preventScroll: true }); }
+    }
+    // Capture phase on the window: runs before Bootstrap's collapse handler, which then never opens the old menu.
+    window.addEventListener('click', function (event) {
+        var toggle = event.target.closest && event.target.closest('.navbar .navbar-toggle');
+        if (!toggle || !phone.matches) return;
+        event.preventDefault(); event.stopPropagation(); if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+        if (sheet && sheet.classList.contains('is-open')) hide(true); else show(toggle);
+    }, true);
+    function label() {
+        var toggle = document.querySelector('.navbar .navbar-toggle');
+        if (!toggle) return;
+        toggle.setAttribute('aria-controls', phone.matches ? 'hs-menu-sheet' : 'app-navbar-collapse');
+        toggle.setAttribute('aria-label', 'Menu');
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', label); else label();
+    var onChange = function () { if (!phone.matches) hide(false); label(); };
+    if (phone.addEventListener) phone.addEventListener('change', onChange); else if (phone.addListener) phone.addListener(onChange);
+    window.addEventListener('pageshow', function () { hide(false); });
 })();

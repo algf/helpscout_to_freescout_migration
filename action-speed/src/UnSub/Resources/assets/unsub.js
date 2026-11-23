@@ -3,7 +3,17 @@
     // Unsubscribe buttons (list rows and the conversation toolbar). One click, no review step:
     //   one_click (button): request the unsubscribe, then close the conversation.
     //   page / email (links): open the unsubscribe page, or a filled-in unsubscribe email, in a new tab.
-    if (typeof module === 'object' && module.exports) { module.exports = { createAction: createAction, createResume: createResume }; return; }
+    // Andrew, 21 Nov 2026: say every time whether the email closed. Only an accepted request closes it.
+    var STAYS_OPEN = 'The email stays open.';
+    function staysOpen(message) {
+        message = String(message || '').trim();
+        return /stays open|no emails were closed|nothing was sent|and closed/i.test(message) ? message : (message + ' ' + STAYS_OPEN).trim();
+    }
+    var LINK_OPENED = {
+        page: 'The unsubscribe page opened in a new tab. Finish there; this email stays open until you close it.',
+        email: 'The unsubscribe email opened in a new tab. Send it there; this email stays open until you close it.'
+    };
+    if (typeof module === 'object' && module.exports) { module.exports = { createAction: createAction, createResume: createResume, staysOpen: staysOpen, LINK_OPENED: LINK_OPENED }; return; }
     if (document.documentElement.dataset.unsubReady) return;
     document.documentElement.dataset.unsubReady = '1';
 
@@ -43,6 +53,7 @@
                 if (settled) return;
                 settled = true;
                 release();
+                message = staysOpen(message);
                 if (manualUrl) { deps.becomeLink(button, manualUrl); message += ' Click Unsub again to open the unsubscribe page.'; }
                 deps.notify('error', message);
             }
@@ -73,9 +84,15 @@
                             finally { release(); }
                             deps.notify(displayFailed ? 'error' : 'success', displayFailed
                                 ? 'Unsubscribed and closed, but the screen could not update. Please refresh.'
-                                : (data.closed ? 'Unsubscribed and closed.' : 'Unsubscribed.'));
+                                : (data.closed ? 'Unsubscribed and closed.' : 'Unsubscribed. ' + STAYS_OPEN + ' It changed after the list loaded, so close it when ready.'));
                             if (!row && data.closed) deps.reload();
-                        }, function (xhr) { failed((xhr && xhr.responseJSON && xhr.responseJSON.message) || 'Could not confirm the unsubscribe request. Please refresh before trying again.', manual); });
+                        }, function (xhr) {
+                            var body = xhr && xhr.responseJSON;
+                            // Definitely not started (nothing sent): keep the one-click button for a retry and forget
+                            // the saved request, so the next page does not report an unknown result.
+                            if (body && body.retry) { if (deps.clear) deps.clear(id); failed(body.message || 'Could not start the unsubscribe request.', null); return; }
+                            failed((body && body.message) || 'Could not confirm the unsubscribe request. Please refresh before trying again.', manual);
+                        });
                     } catch (e) { failed('Could not confirm the unsubscribe request. Please refresh before trying again.', null); }
                 }, function (xhr) { failed((xhr && xhr.responseJSON && xhr.responseJSON.message) || 'Could not start the unsubscribe request.', null); });
             } catch (e) { failed('Could not start the unsubscribe request.', null); }
@@ -109,7 +126,7 @@
                     if (deps.pending) deps.pending(id, false);
                     if (shared) { shared.end(id); if (listActive) shared.activity(-1); }
                 }
-                deps.notify(result && result.accepted && !message ? 'success' : 'error', message || (result.closed ? 'Unsubscribed and closed.' : 'Unsubscribed.'));
+                deps.notify(result && result.accepted && !message ? 'success' : 'error', message ? staysOpen(message) : (result.closed ? 'Unsubscribed and closed.' : 'Unsubscribed. ' + STAYS_OPEN));
             }
             function poll() {
                 if (released) return;
@@ -265,7 +282,12 @@
         var control = event.target.closest ? event.target.closest('.unsub-review') : null;
         if (!control) return;
         event.stopPropagation();
-        if (control.tagName === 'A') return;
+        if (control.tagName === 'A') {
+            // The link opens normally in a new tab; the result is not known here, so the email stays open.
+            var opened = LINK_OPENED[control.dataset.unsubMode];
+            if (opened) window.setTimeout(function () { notify('success', opened); }, 0);
+            return;
+        }
         event.preventDefault();
         if (control.disabled || !window.jQuery || !control.dataset.url) return;
         unsubscribeNow(control);
