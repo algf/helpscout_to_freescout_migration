@@ -11,6 +11,16 @@ use Modules\UnSub\Services\UnsubscribeTransport;
 
 class UnsubscribeController extends Controller
 {
+    // 'retry' marks a definite not-started answer: nothing was sent, so the same button can simply be used again.
+    const NOT_STARTED = 'Could not start the unsubscribe, so nothing was sent. The email stays open. Please try again.';
+
+    // After the request has gone out, a failed cache write must not hide the result or stop the close.
+    private static function remember($key, $value, $minutes)
+    {
+        try { \Cache::put($key, $value, $minutes); return true; }
+        catch (\Throwable $e) { \Log::warning('UnSub could not save a result', ['error'=>$e->getMessage()]); return false; }
+    }
+
     public function action(Request $request)
     {
         if ($request->input('action') === 'preview') return $this->preview($request);
@@ -50,7 +60,10 @@ class UnsubscribeController extends Controller
             $groups[$key]['snapshots'][]=['id'=>$id,'thread_id'=>$thread ? $thread->id : null,'headers_hash'=>hash('sha256',$thread ? $thread->headers : ''),'status'=>$conversation->status];
         }
         $token = bin2hex(random_bytes(24));
-        \Cache::put('unsub:'.$token,['user_id'=>auth()->id(),'created'=>time(),'groups'=>$groups],10);
+        // 21 Nov 2026 (a live unsubscribe): a cache write can fail (a cache folder owned by another system user).
+        // Say plainly that nothing was started instead of a bare server error.
+        try { \Cache::put('unsub:'.$token,['user_id'=>auth()->id(),'created'=>time(),'groups'=>$groups],10); }
+        catch (\Throwable $e) { \Log::warning('UnSub could not save its review', ['error'=>$e->getMessage()]); return response()->json(['retry'=>true,'message'=>self::NOT_STARTED],503); }
         $items=[];
         foreach ($groups as $group) $items[]=['key'=>$group['key'],'ids'=>array_column($group['snapshots'],'id'),'mailbox_id'=>$group['mailbox_id'],'sender'=>$group['sender'],'list'=>$group['list'],'count'=>count($group['snapshots']),'automatic'=>$group['automatic'],'reason'=>$group['reason'],'host'=>$group['candidate']['url'] ? parse_url($group['candidate']['url'],PHP_URL_HOST) : null,'manual_url'=>$group['candidate']['manual_url'],'mailto'=>$group['candidate']['mailto'],'conversation_url'=>$group['conversation_url']];
         return response()->json(['token'=>$token,'items'=>$items]);
@@ -105,7 +118,8 @@ class UnsubscribeController extends Controller
         $resultKey='unsub-result:'.$token.':'.$key;
         $running=false;
         try {
-            $cached=\Cache::get($resultKey);
+            try { $cached=\Cache::get($resultKey); }
+            catch (\Throwable $e) { return response()->json(['accepted'=>false,'closed'=>0,'retry'=>true,'message'=>self::NOT_STARTED],503); }
             if ($cached) return response()->json($cached);
             foreach ($group['snapshots'] as $snapshot) {
                 $c=Conversation::findOrFail($snapshot['id']);
@@ -117,15 +131,20 @@ class UnsubscribeController extends Controller
                 $done=Conversation::find($snapshot['id'])->getMeta('unsub.accepted', []);
                 if (($done['headers_hash'] ?? '') === $snapshot['headers_hash']) {
                     $duplicate=['accepted'=>true,'closed'=>0,'message'=>'An unsubscribe request for this message was already accepted. No new request was sent.'];
-                    \Cache::put($resultKey.':final',$duplicate,15);
+                    self::remember($resultKey.':final',$duplicate,15);
                     return response()->json($duplicate);
                 }
             }
             // Persist an indeterminate result before any network operation. A
             // dropped connection or duplicate click must never resend silently.
             $result=['accepted'=>false,'closed'=>0,'message'=>'The previous attempt could not be confirmed. Check the manual link before retrying.'];
-            \Cache::put($resultKey,$result,15);
-            \Cache::put($resultKey.':running',time(),2);
+            // If this guard cannot be saved, send nothing: a retry could otherwise repeat the request unseen.
+            try { \Cache::put($resultKey,$result,15); \Cache::put($resultKey.':running',time(),2); }
+            catch (\Throwable $e) {
+                \Log::warning('UnSub could not start a request', ['group'=>$key,'error'=>$e->getMessage()]);
+                try { \Cache::forget($resultKey); } catch (\Throwable $ignored) {}
+                return response()->json(['accepted'=>false,'closed'=>0,'retry'=>true,'message'=>self::NOT_STARTED],503);
+            }
             $running=true;
             $transport=app(UnsubscribeTransport::class);
             try { $verified=$transport->verifyGmail(\App\Mailbox::findOrFail($group['mailbox_id']),$group['candidate']); }
@@ -136,7 +155,7 @@ class UnsubscribeController extends Controller
                 try { $outcome=$transport->post($group['candidate']['url']); }
                 catch (\Throwable $e) { $outcome=['accepted'=>false,'message'=>'Could not confirm the request. Check the manual link before retrying.']; }
                 $result=array_merge($result,$outcome);
-                \Cache::put($resultKey,$result,15);
+                // Record acceptance and close first; the cache copy below is only for recovery after navigation.
                 if ($result['accepted']) {
                     foreach ($group['snapshots'] as $snapshot) {
                         $c=Conversation::find($snapshot['id']);
@@ -166,13 +185,13 @@ class UnsubscribeController extends Controller
                     $result['message'].=' Closed '.$result['closed'].' of '.count($group['snapshots']).' selected conversations.';
                 }
             }
-            \Cache::put($resultKey,$result,15);
+            self::remember($resultKey,$result,15);
             // Recovery may poll before middleware returns. Finish active recounts
             // before publishing completion, so its list refresh sees reconciled counts.
             if (class_exists('InboxSpeed\\Counters')) \InboxSpeed\Counters::flush();
-            \Cache::put($resultKey.':final',$result,15);
+            self::remember($resultKey.':final',$result,15);
             \Log::info('UnSub request',['user_id'=>auth()->id(),'group'=>$key,'accepted'=>$result['accepted'],'closed'=>$result['closed']]);
             return response()->json($result);
-        } finally { if ($running) \Cache::forget($resultKey.':running'); flock($lock,LOCK_UN);fclose($lock); }
+        } finally { if ($running) { try { \Cache::forget($resultKey.':running'); } catch (\Throwable $e) {} } flock($lock,LOCK_UN);fclose($lock); }
     }
 }

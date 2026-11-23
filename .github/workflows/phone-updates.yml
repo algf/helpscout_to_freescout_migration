@@ -1,0 +1,34 @@
+name: Phone updates regression checks
+on:
+  pull_request:
+    paths: ['phone-updates/**', 'action-speed/src/**', '.github/workflows/phone-updates.yml']
+  push:
+    branches: [main]
+    paths: ['phone-updates/**', 'action-speed/src/**', '.github/workflows/phone-updates.yml']
+permissions:
+  contents: read
+jobs:
+  portable-checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: phone-updates
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Run JavaScript regression checks
+        run: node --test tests/*.test.cjs
+      - name: Check browser script syntax
+        run: |
+          node --check src/Modules/CrockdHelpScoutFolders/row-assign.js
+          node --check src/Modules/CrockdHelpScoutFolders/mailbox-switcher.js
+          node --check ../design-review/module/HelpScoutTheme/Public/js/theme.js
+      - name: Check PHP syntax
+        run: |
+          for f in src/Modules/CrockdHelpScoutFolders/*.php src/Modules/UnSub/Tests/unsubscribe-integration.php; do php -l "$f"; done

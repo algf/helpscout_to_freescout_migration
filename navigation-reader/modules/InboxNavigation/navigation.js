@@ -48,7 +48,7 @@
         var bar = doc.createElement('div'); bar.className = 'inbox-reader-bar';
         back = doc.createElement('button'); back.type = 'button'; back.textContent = 'Back to inbox'; back.onclick = hide;
         full = doc.createElement('a'); full.className = 'inbox-reader-full'; full.textContent = 'Full page'; full.target = '_blank'; full.rel = 'noopener';
-        next = doc.createElement('button'); next.type = 'button'; next.className = 'inbox-reader-close-next'; next.textContent = 'Close and next'; next.onclick = closeNext; next.disabled = true;
+        next = doc.createElement('button'); next.type = 'button'; next.className = 'inbox-reader-close-next'; next.textContent = 'Close'; next.title = 'Close this conversation and return to the inbox'; next.setAttribute('aria-label', 'Close conversation and return to the inbox'); next.onclick = closeNext; next.disabled = true;
         bar.append(back, full, next); status = doc.createElement('div'); status.className = 'inbox-reader-status'; status.setAttribute('role','status'); status.setAttribute('aria-live','polite');
         pane.append(bar,status); doc.body.append(pane);
         pane.addEventListener('keydown', function(e) { if (e.key === 'Escape') { e.preventDefault(); hide(); } });
@@ -247,17 +247,21 @@
         if(!list||!win.fsAjax||!win.laroute||!Number.isSafeInteger(id))return;
         if(win.fsApplyFilter&&!win.fsApplyFilter('conversation.can_change_status',true,{trigger:win.jQuery(next)}))return;
         if(!list.begin(id)){message('An action on this conversation is still running.');return;}
-        var current=rowFor(id),all=rows(),index=all.indexOf(current),following=index<0?null:rowUrl(all[index+1]);
+        // Andrew, 21 Nov 2026: Close returns to the inbox list (same folder and scroll position), like Close on a
+        // conversation page (QuickClose, 1 Oct 2026). Focus moves to the row that takes the closed row's place.
+        var current=rowFor(id),all=rows(),index=all.indexOf(current),followingRow=index<0?null:(all[index+1]||all[index-1]||null);
         invalidateWarm();closing=true;next.disabled=true;list.activity(1);message('Closing conversation…');
         var ended=false;function finish(){if(ended)return false;ended=true;closing=false;list.end(id);list.activity(-1);next.disabled=false;return true;}
         try {(win.inboxNavigationOriginalAjax||win.fsAjax).call(win,{action:'conversation_change_status',conversation_id:id,status:3,x_embed:1,folder_id:new URL(win.location.href).searchParams.get('folder_id')||''},win.laroute.route('conversations.ajax'),function(response){
             if(!finish())return;
             if(!response||response.status!=='success'){message(response&&response.msg||'Could not close this conversation.');return;}
             if(current)list.hideRow(current);list.changed();changed=true;
-            // The write is confirmed before the next conversation becomes active.
+            // The write is confirmed before the reader leaves. If another conversation is open by now, stay on it.
             if(frame!==closingFrame||String(currentId)!==String(id))return;
             closingFrame.remove();frame=null;owner=null;
-            if(opened&&following)open(following.href);else hide();
+            var focusTarget=followingRow&&followingRow.isConnected&&followingRow.querySelector('td.conv-subject a[href]');
+            if(focusTarget)returnFocus=focusTarget;
+            hide();
         },true,function(){if(finish())message('Close could not be confirmed. Refresh the inbox before trying again.');});}
         catch(_){if(finish())message('Close could not be confirmed. Refresh the inbox before trying again.');}
     }

@@ -1,0 +1,22 @@
+<?php
+require_once __DIR__.'/Views.php';
+\CrockdHelpScoutFolders\Views::boot();
+require_once __DIR__.'/QuickClose.php';
+\CrockdHelpScoutFolders\QuickClose::boot();
+require_once __DIR__.'/RowAssign.php';
+\CrockdHelpScoutFolders\RowAssign::boot();
+require_once __DIR__.'/ViewedStatus.php';
+\CrockdHelpScoutFolders\ViewedStatus::boot();
+require_once __DIR__.'/AppIcon.php';
+require_once __DIR__.'/WorkflowNavigation.php';
+\CrockdHelpScoutFolders\WorkflowNavigation::boot();
+require_once __DIR__.'/WorkflowFolderCheck.php';
+\CrockdHelpScoutFolders\WorkflowFolderCheck::boot();
+require_once __DIR__.'/ListTools.php';
+\CrockdHelpScoutFolders\ListTools::boot();
+require_once __DIR__.'/NoStars.php';
+\CrockdHelpScoutFolders\NoStars::boot();
+require_once __DIR__.'/Clients.php';
+\CrockdHelpScoutFolders\Clients::boot();
+require_once __DIR__.'/MailboxSwitcher.php';
+\CrockdHelpScoutFolders\MailboxSwitcher::boot();
